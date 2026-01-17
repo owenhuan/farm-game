@@ -12,6 +12,7 @@ FARM_Y_OFFSET = 120
 SHOP_HEIGHT = 80
 COLLAPSED_HEIGHT = 30
 MENU_HEIGHT = 40
+MUSIC_VOLUMES = [0.0, 0.25, 0.5, 0.75, 1.0]
 
 # Colors
 GRASS_GREEN = (34, 139, 34)
@@ -36,6 +37,7 @@ MENU_BUTTONS = {
     "Help": pygame.Rect(90, 5, 70, 30),
     "Quit": pygame.Rect(170, 5, 70, 30),
     "Music": pygame.Rect(250, 5, 80, 30),
+    "Vol": pygame.Rect(340, 5, 90, 30),
 }
 
 # Plant growth shapes and colors
@@ -95,6 +97,7 @@ game_won = False
 game_over = False
 show_game_over = False
 is_paused = False
+music_volume_index = 2  # corresponds to 0.5 in MUSIC_VOLUMES
 is_music_on = True
 
 # Day system - 8 days (0-7)
@@ -113,8 +116,7 @@ day_timer_surface = None
 pygame.mixer.init()
 pygame.mixer.music.load("background.mp3")  # your file name
 pygame.mixer.music.play(-1)  # -1 = loop forever
-
-pygame.mixer.music.set_volume(0.5)  # 50% volume
+pygame.mixer.music.set_volume(MUSIC_VOLUMES[music_volume_index])
 
 
 def get_shop_buttons():
@@ -325,7 +327,11 @@ def draw_menu_bar():
             color = (170, 170, 170)
         pygame.draw.rect(WIN, color, rect)
         pygame.draw.rect(WIN, BLACK, rect, 2)
-        text_surf = font.render(label, True, BLACK)
+        if label == "Vol":
+            display = f"Vol {int(MUSIC_VOLUMES[music_volume_index]*100)}%"
+        else:
+            display = label
+        text_surf = font.render(display, True, BLACK)
         WIN.blit(text_surf, text_surf.get_rect(center=rect.center))
 
 def draw_shop():
@@ -587,15 +593,8 @@ while run:
             # Top menu bar handling
             if my < MENU_HEIGHT and not show_game_over and not show_instructions:
                 if MENU_BUTTONS["New"].collidepoint(mx, my):
-                    # Reset game
-                    coins = 15
-                    daily_start_coins = 15
-                    corn_seeds = watermelon_seeds = pumpkin_seeds = tomato_seeds = grape_seeds = super_seeds = 0
-                    crops = [[None for _ in range(GRID_SIZE)] for _ in range(GRID_SIZE)]
-                    plant_time = [[0 for _ in range(GRID_SIZE)] for _ in range(GRID_SIZE)]
-                    current_day = 0
-                    day_start_time = time.time()
-                    game_over = game_won = show_game_over = False
+                    # Same behavior as pause button: toggle pause state
+                    is_paused = not is_paused
                 elif MENU_BUTTONS["Help"].collidepoint(mx, my):
                     show_instructions = True
                 elif MENU_BUTTONS["Music"].collidepoint(mx, my):
@@ -605,6 +604,10 @@ while run:
                     else:
                         pygame.mixer.music.unpause()
                         is_music_on = True
+                elif MENU_BUTTONS["Vol"].collidepoint(mx, my):
+                    # Cycle through predefined volume levels
+                    music_volume_index = (music_volume_index + 1) % len(MUSIC_VOLUMES)
+                    pygame.mixer.music.set_volume(MUSIC_VOLUMES[music_volume_index])
                 elif MENU_BUTTONS["Quit"].collidepoint(mx, my):
                     run = False
                 continue
