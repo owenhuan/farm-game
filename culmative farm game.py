@@ -11,6 +11,7 @@ GRID_SIZE = 7
 FARM_Y_OFFSET = 120
 SHOP_HEIGHT = 80
 COLLAPSED_HEIGHT = 30
+MENU_HEIGHT = 40
 
 # Colors
 GRASS_GREEN = (34, 139, 34)
@@ -28,6 +29,14 @@ timer_font_small = pygame.font.SysFont('arial', 12, bold=True)
 timer_font_day = pygame.font.SysFont('arial', 20, bold=True)
 font = pygame.font.SysFont('arial', 14)
 big_font = pygame.font.SysFont('arial', 19)
+
+#menu
+MENU_BUTTONS = {
+    "New": pygame.Rect(10, 5, 70, 30),
+    "Help": pygame.Rect(90, 5, 70, 30),
+    "Quit": pygame.Rect(170, 5, 70, 30),
+    "Music": pygame.Rect(250, 5, 80, 30),
+}
 
 # Plant growth shapes and colors
 PLANT_SHAPES = {
@@ -86,6 +95,7 @@ game_won = False
 game_over = False
 show_game_over = False
 is_paused = False
+is_music_on = True
 
 # Day system - 8 days (0-7)
 DAY_DURATION = 90
@@ -110,29 +120,29 @@ pygame.mixer.music.set_volume(0.5)  # 50% volume
 def get_shop_buttons():
     if shop_collapsed:
         return {
-            'toggle': pygame.Rect(10, 5, 20, 20),
-            'coins': pygame.Rect(35, 2, 50, 26),
-            'day': pygame.Rect(90, 2, 45, 26),
-            'quota': pygame.Rect(140, 2, 45, 26),
-            'timer': pygame.Rect(195, 2, 55, 26),  
-            'seeds': pygame.Rect(255, 2, 45, 26),
-            'pause': pygame.Rect(305, 2, 30, 26),
-            'help': pygame.Rect(WIDTH-35, 5, 20, 20)
+            'toggle': pygame.Rect(10, 5 + MENU_HEIGHT, 20, 20),
+            'coins': pygame.Rect(35, 2 + MENU_HEIGHT, 50, 26),
+            'day': pygame.Rect(90, 2 + MENU_HEIGHT, 45, 26),
+            'quota': pygame.Rect(140, 2 + MENU_HEIGHT, 45, 26),
+            'timer': pygame.Rect(195, 2 + MENU_HEIGHT, 55, 26),
+            'seeds': pygame.Rect(255, 2 + MENU_HEIGHT, 45, 26),
+            'pause': pygame.Rect(305, 2 + MENU_HEIGHT, 30, 26),
+            'help': pygame.Rect(WIDTH-35, 5 + MENU_HEIGHT, 20, 20)
         }
     return {
-        'corn 5$': pygame.Rect(10, 15, 70, 50),
-        'watermelon 7$': pygame.Rect(85, 15, 70, 50),
-        'pumpkin 8$': pygame.Rect(160, 15, 70, 50),
-        'tomato 10$': pygame.Rect(235, 15, 70, 50),
-        'grape 12$': pygame.Rect(310, 15, 70, 50),
-        'super 20$': pygame.Rect(385, 15, 70, 50),
-        'coins': pygame.Rect(460, 15, 70, 25),
-        'day': pygame.Rect(535, 15, 45, 25),
-        'quota': pygame.Rect(585, 15, 45, 25),
-        'timer': pygame.Rect(635, 15, 70, 25),
-        'seeds': pygame.Rect(710, 15, 55, 25),
-        'pause': pygame.Rect(600, 45, 40, 25),
-        'help': pygame.Rect(WIDTH-35, 15, 25, 45)
+        'corn 5$': pygame.Rect(10, 15 + MENU_HEIGHT, 70, 50),
+        'watermelon 7$': pygame.Rect(85, 15 + MENU_HEIGHT, 70, 50),
+        'pumpkin 8$': pygame.Rect(160, 15 + MENU_HEIGHT, 70, 50),
+        'tomato 10$': pygame.Rect(235, 15 + MENU_HEIGHT, 70, 50),
+        'grape 12$': pygame.Rect(310, 15 + MENU_HEIGHT, 70, 50),
+        'super 20$': pygame.Rect(385, 15 + MENU_HEIGHT, 70, 50),
+        'coins': pygame.Rect(460, 15 + MENU_HEIGHT, 70, 25),
+        'day': pygame.Rect(535, 15 + MENU_HEIGHT, 45, 25),
+        'quota': pygame.Rect(585, 15 + MENU_HEIGHT, 45, 25),
+        'timer': pygame.Rect(635, 15 + MENU_HEIGHT, 70, 25),
+        'seeds': pygame.Rect(710, 15 + MENU_HEIGHT, 55, 25),
+        'pause': pygame.Rect(600, 45 + MENU_HEIGHT, 40, 25),
+        'help': pygame.Rect(WIDTH-35, 15 + MENU_HEIGHT, 25, 45)
     }
 
 
@@ -302,13 +312,30 @@ def draw_crop_timer(tile_x, tile_y, plant_time_val, crop_type, row, col):
         WIN.blit(bg, (text_x - 1, tile_y + 4))
         WIN.blit(text, (text_x, tile_y + 5))
 
+def draw_menu_bar():
+    # background bar
+    pygame.draw.rect(WIN, (180, 180, 180), (0, 0, WIDTH, MENU_HEIGHT))
+    pygame.draw.rect(WIN, BLACK, (0, 0, WIDTH, MENU_HEIGHT), 3)
+
+    mouse_pos = pygame.mouse.get_pos()
+    for label, rect in MENU_BUTTONS.items():
+        color = SHOP_HOVER if rect.collidepoint(mouse_pos) else SHOP_BG
+        # Dim the Music button when music is off
+        if label == "Music" and not is_music_on:
+            color = (170, 170, 170)
+        pygame.draw.rect(WIN, color, rect)
+        pygame.draw.rect(WIN, BLACK, rect, 2)
+        text_surf = font.render(label, True, BLACK)
+        WIN.blit(text_surf, text_surf.get_rect(center=rect.center))
+
 def draw_shop():
     buttons = get_shop_buttons()
     mouse_pos = pygame.mouse.get_pos()
     height = COLLAPSED_HEIGHT if shop_collapsed else SHOP_HEIGHT
     
-    pygame.draw.rect(WIN, SHOP_BG, (0, 0, WIDTH, height))
-    pygame.draw.rect(WIN, BROWN, (0, 0, WIDTH, height), 5)
+    # Draw shop below the top menu bar
+    pygame.draw.rect(WIN, SHOP_BG, (0, MENU_HEIGHT, WIDTH, height))
+    pygame.draw.rect(WIN, BROWN, (0, MENU_HEIGHT, WIDTH, height), 5)
     
     if shop_collapsed:
         btn = buttons['toggle']
@@ -333,9 +360,9 @@ def draw_shop():
         # FIXED: Seed letters with counts
         for i, letter in enumerate(SEED_LETTERS):
             x = 355 + i * 22
-            WIN.blit(font.render(letter, True, BLACK), (x + 2, 3))
+            WIN.blit(font.render(letter, True, BLACK), (x + 2, 3 + MENU_HEIGHT))
             if seed_count_surfaces[i]:
-                WIN.blit(seed_count_surfaces[i], (x + 2, 18))
+                WIN.blit(seed_count_surfaces[i], (x + 2, 18 + MENU_HEIGHT))
         
         # FIXED: Pause button with visual feedback
         btn = buttons['pause']
@@ -450,7 +477,7 @@ def draw_end_screen():
 def get_farm_position():
     return (
         (WIDTH - GRID_SIZE * TILE_SIZE) // 2,
-        (COLLAPSED_HEIGHT if shop_collapsed else SHOP_HEIGHT) + FARM_Y_OFFSET
+        MENU_HEIGHT + (COLLAPSED_HEIGHT if shop_collapsed else SHOP_HEIGHT) + FARM_Y_OFFSET
     )
 
 def draw_farm():
@@ -557,8 +584,33 @@ while run:
                     show_instructions = False
                     continue
             
+            # Top menu bar handling
+            if my < MENU_HEIGHT and not show_game_over and not show_instructions:
+                if MENU_BUTTONS["New"].collidepoint(mx, my):
+                    # Reset game
+                    coins = 15
+                    daily_start_coins = 15
+                    corn_seeds = watermelon_seeds = pumpkin_seeds = tomato_seeds = grape_seeds = super_seeds = 0
+                    crops = [[None for _ in range(GRID_SIZE)] for _ in range(GRID_SIZE)]
+                    plant_time = [[0 for _ in range(GRID_SIZE)] for _ in range(GRID_SIZE)]
+                    current_day = 0
+                    day_start_time = time.time()
+                    game_over = game_won = show_game_over = False
+                elif MENU_BUTTONS["Help"].collidepoint(mx, my):
+                    show_instructions = True
+                elif MENU_BUTTONS["Music"].collidepoint(mx, my):
+                    if is_music_on:
+                        pygame.mixer.music.pause()
+                        is_music_on = False
+                    else:
+                        pygame.mixer.music.unpause()
+                        is_music_on = True
+                elif MENU_BUTTONS["Quit"].collidepoint(mx, my):
+                    run = False
+                continue
+            
             if not show_instructions:
-                shop_height = COLLAPSED_HEIGHT if shop_collapsed else SHOP_HEIGHT
+                shop_height = MENU_HEIGHT + (COLLAPSED_HEIGHT if shop_collapsed else SHOP_HEIGHT)
                 if my < shop_height:
                     buttons = get_shop_buttons()
                     if shop_collapsed:
@@ -628,6 +680,7 @@ while run:
     update_cached_text()
     # Draw everything
     WIN.fill((135, 206, 235))
+    draw_menu_bar()
     if not show_game_over:
         draw_shop()
     draw_farm()
