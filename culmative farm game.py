@@ -14,15 +14,18 @@ COLLAPSED_HEIGHT = 30
 MENU_HEIGHT = 40
 MUSIC_VOLUMES = [0.0, 0.25, 0.5, 0.75, 1.0]
 
-# Colors
-GRASS_GREEN = (34, 139, 34)
-BROWN = (139, 69, 19)
+# Colors / palette
+SKY_COLOR = (130, 195, 255)
+GROUND_COLOR = (90, 175, 100)
+SUN_COLOR = (255, 245, 170)
+GRASS_GREEN = (76, 175, 80)
+BROWN = (120, 72, 40)
 WHITE = (255, 255, 255)
 BLACK = (0, 0, 0)
-SHOP_BG = (200, 180, 140)
-SHOP_HOVER = (220, 200, 160)
+SHOP_BG = (239, 228, 176)
+SHOP_HOVER = (255, 243, 200)
 RED = (255, 100, 100)
-INSTRUCTIONS_BG = (240, 240, 240)
+INSTRUCTIONS_BG = (250, 245, 235)
 PAUSE_COLOR = (255, 215, 0)
 
 # Fonts
@@ -314,6 +317,15 @@ def draw_crop_timer(tile_x, tile_y, plant_time_val, crop_type, row, col):
         WIN.blit(bg, (text_x - 1, tile_y + 4))
         WIN.blit(text, (text_x, tile_y + 5))
 
+
+def draw_background():
+    # Sky
+    WIN.fill(SKY_COLOR)
+    # Ground / horizon
+    pygame.draw.rect(WIN, GROUND_COLOR, (0, HEIGHT // 2 + 40, WIDTH, HEIGHT // 2 - 40))
+    # Sun in top-right
+    pygame.draw.circle(WIN, SUN_COLOR, (WIDTH - 80, 80), 40)
+
 def draw_menu_bar():
     # background bar
     pygame.draw.rect(WIN, (180, 180, 180), (0, 0, WIDTH, MENU_HEIGHT))
@@ -491,7 +503,10 @@ def draw_farm():
     for row in range(GRID_SIZE):
         for col in range(GRID_SIZE):
             x, y = farm_x + col * TILE_SIZE, farm_y + row * TILE_SIZE
+            # Grass base
             pygame.draw.rect(WIN, GRASS_GREEN, (x, y, TILE_SIZE, TILE_SIZE))
+            # Soil patch for visual depth
+            pygame.draw.rect(WIN, (166, 124, 82), (x + 8, y + 8, TILE_SIZE - 16, TILE_SIZE - 16))
             if crops[row][col]:
                 draw_growth_stage(x, y, crops[row][col]["type"], crops[row][col]["state"])
                 draw_crop_timer(x, y, plant_time[row][col], crops[row][col]["type"], row, col)
@@ -682,7 +697,7 @@ while run:
     
     update_cached_text()
     # Draw everything
-    WIN.fill((135, 206, 235))
+    draw_background()
     draw_menu_bar()
     if not show_game_over:
         draw_shop()
