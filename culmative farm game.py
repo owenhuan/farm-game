@@ -14,6 +14,7 @@ COLLAPSED_HEIGHT = 30
 MENU_HEIGHT = 40
 MUSIC_VOLUMES = [0.0, 0.25, 0.5, 0.75, 1.0]  # Keep 0.0 but skip it
 music_volume_index = 1
+SCORE_FILE = "scores.txt"
 
 # Colors / palette
 SKY_COLOR = (130, 195, 255)
@@ -33,6 +34,7 @@ PAUSE_COLOR = (255, 215, 0)
 timer_font_small = pygame.font.SysFont('arial', 12, bold=True)
 timer_font_day = pygame.font.SysFont('arial', 20, bold=True)
 font = pygame.font.SysFont('arial', 14)
+small_font = pygame.font.SysFont('arial', 12)
 big_font = pygame.font.SysFont('arial', 19)
 
 #menu
@@ -42,6 +44,7 @@ MENU_BUTTONS = {
     "Quit": pygame.Rect(170, 5, 70, 30),
     "Music": pygame.Rect(250, 5, 80, 30),
     "Vol": pygame.Rect(340, 5, 90, 30),
+    "Rank": pygame.Rect(WIDTH - 100, 5, 90, 30),
 }
 
 # Plant growth shapes and colors
@@ -89,7 +92,7 @@ YOU_WIN_TITLE = big_font.render("YOU WIN!", True, (0, 255, 0))
 INSTRUCTIONS_TITLE = big_font.render("GAME INSTRUCTIONS", True, BLACK)
 
 # Game state - Consistent 15 starting coins
-coins = 15
+coins = 500
 corn_seeds = watermelon_seeds = pumpkin_seeds = tomato_seeds = grape_seeds = super_seeds = 0
 crops = [[None for _ in range(GRID_SIZE)] for _ in range(GRID_SIZE)]
 plant_time = [[0 for _ in range(GRID_SIZE)] for _ in range(GRID_SIZE)]
@@ -103,13 +106,19 @@ show_game_over = False
 is_paused = False
 music_volume_index = 2  # corresponds to 0.5 in MUSIC_VOLUMES
 is_music_on = True
+entering_name = False
+player_name = ""
+score_saved = False
+scoreboard = []  # list of (name, score)
+player_rank = None
+show_scoreboard = False
 
 # Day system - 8 days (0-7)
-DAY_DURATION = 90
+DAY_DURATION = 2
 day_start_time = time.time()
 current_day = 0
 daily_start_coins = 15
-daily_quotas = [20, 30, 50, 80, 120, 170, 230, 300]
+daily_quotas = [20, 30, 50, 80, 120, 170, 230]
 
 # Cached surfaces
 coins_surface = day_surface = quota_surface = seeds_surface = None
@@ -121,6 +130,80 @@ pygame.mixer.init()
 pygame.mixer.music.load("background.mp3")  # your file name
 pygame.mixer.music.play(-1)  # -1 = loop forever
 pygame.mixer.music.set_volume(MUSIC_VOLUMES[music_volume_index])
+
+
+def load_scores():
+    scores = []
+    try:
+        with open(SCORE_FILE, "r") as f:
+            for line in f:
+                line = line.strip()
+                if not line:
+                    continue
+                parts = line.split(",")
+                if len(parts) != 2:
+                    continue
+                name, score_str = parts
+                try:
+                    score = int(score_str)
+                except ValueError:
+                    continue
+                scores.append((name, score))
+    except FileNotFoundError:
+        pass
+    return scores
+
+
+def save_score_and_rank(name, score):
+    scores = load_scores()
+    scores.append((name, score))
+    # Sort descending by score
+    scores.sort(key=lambda s: s[1], reverse=True)
+    # Write back to file
+    with open(SCORE_FILE, "w") as f:
+        for n, sc in scores:
+            f.write(f"{n},{sc}\n")
+    # Find this player's rank
+    rank = None
+    for i, (n, sc) in enumerate(scores):
+        if n == name and sc == score:
+            rank = i + 1
+            break
+    return scores, rank
+
+
+def prepare_win_score_prompt():
+    """Prepare high-score info when the player wins.
+
+    Decides if the player is eligible for top-5 and, if so,
+    enables name entry. Also loads the existing scoreboard for
+    display on the win popup.
+    """
+    global entering_name, player_name, score_saved, scoreboard, player_rank
+
+    existing_scores = load_scores()
+
+    # Compute potential rank if this score were added
+    marker_name = "__CURRENT__"
+    temp = existing_scores + [(marker_name, coins)]
+    temp.sort(key=lambda s: s[1], reverse=True)
+
+    potential_rank = None
+    for i, (n, sc) in enumerate(temp):
+        if n == marker_name and sc == coins:
+            potential_rank = i + 1
+            break
+
+    scoreboard = existing_scores  # show existing scores
+    player_name = ""
+    score_saved = False
+    player_rank = potential_rank
+
+    # Only allow saving if player would be in top 5
+    if potential_rank is not None and potential_rank <= 5:
+        entering_name = True
+    else:
+        entering_name = False
 
 
 def get_shop_buttons():
@@ -153,25 +236,38 @@ def check_daily_quota():
     global daily_start_coins, current_day, game_over, game_won, show_game_over
     time_elapsed = time.time() - day_start_time
     days_passed = int(time_elapsed // DAY_DURATION)
-    new_day = min(days_passed, 7)
-    
-    if new_day > current_day:
+    max_day_index = len(daily_quotas) - 1
+
+    # Only act when we've advanced past the current_day boundary
+    if days_passed > current_day:
         print(f"Day {current_day} ended. Checking quota...")
-        if current_day < len(daily_quotas):
+        if current_day <= max_day_index:
             required = daily_quotas[current_day]
-            # FIXED: Check TOTAL coins vs quota (not earned)
+            # Check TOTAL coins vs quota (not earned)
             if coins >= required:
                 print(f"✓ Day {current_day} PASSED! (Coins: {coins} >= {required})")
-                if current_day == 7:
+                if current_day == max_day_index:
+                    # Last day passed -> WIN
                     game_won = True
                     show_game_over = True
+                    # Prepare win popup + potential ranking info
+                    prepare_win_score_prompt()
                 else:
-                    current_day = new_day
-                    daily_start_coins = coins  # Track starting total for next day
+                    # Move to next day
+                    current_day += 1
+                    daily_start_coins = coins
             else:
+                # Failed quota
                 game_over = True
                 show_game_over = True
                 print(f"✗ Day {current_day} FAILED! (Coins: {coins} < {required})")
+                # On failure, just load existing scores; no name entry
+                from_scores = load_scores()
+                globals()["scoreboard"] = from_scores
+                globals()["entering_name"] = False
+                globals()["player_name"] = ""
+                globals()["score_saved"] = False
+                globals()["player_rank"] = None
         return True
     return False
 
@@ -331,36 +427,56 @@ def draw_menu_bar():
 
     mouse_pos = pygame.mouse.get_pos()
     for label, rect in MENU_BUTTONS.items():
-        # PAUSE BUTTON: Grey when paused (highest priority)
-        if label == "Pause" and is_paused:
-            color = (170, 170, 170)  # GREY when PAUSED
-        elif rect.collidepoint(mouse_pos):
+        # Base colors
+        if rect.collidepoint(mouse_pos):
             color = SHOP_HOVER
         else:
             color = SHOP_BG
-        
+
         # MUSIC BUTTON: Dim when music off
         if label == "Music" and not is_music_on:
             color = (170, 170, 170)
-        
-        pygame.draw.rect(WIN, color, rect)
-        pygame.draw.rect(WIN, BLACK, rect, 2)
-        
+
+        # Special styling for Pause button
+        if label == "Pause":
+            # Running: bright gold; Paused: softer grey-gold
+            color = (255, 230, 120) if not is_paused else (210, 210, 210)
+
+        pygame.draw.rect(WIN, color, rect, border_radius=6)
+        pygame.draw.rect(WIN, BLACK, rect, 2, border_radius=6)
+
         if label == "Vol":
-            # FIXED: Shows ONLY 25%, 50%, 75%, 100% (no 0%)
+            # Shows ONLY 25%, 50%, 75%, 100% (no 0%)
             volume_percent = int(MUSIC_VOLUMES[music_volume_index] * 100)
             display = f"Vol {volume_percent}%"
+            text_surf = font.render(display, True, BLACK)
+            WIN.blit(text_surf, text_surf.get_rect(center=rect.center))
         elif label == "Pause":
-            # Visual feedback: || (paused) or ▶ (running)
-            pause_surf = PAUSE_ON_TEXT if is_paused else PAUSE_TEXT
-            WIN.blit(pause_surf, pause_surf.get_rect(center=rect.center))
-            continue  # Skip normal text rendering
+            # Custom icons: || when running, triangle ▶ when paused
+            cx, cy = rect.center
+            if not is_paused:
+                # Two pause bars
+                bar_w = 6
+                bar_h = rect.height - 10
+                gap = 4
+                left_bar = pygame.Rect(cx - bar_w - gap//2, cy - bar_h//2, bar_w, bar_h)
+                right_bar = pygame.Rect(cx + gap//2, cy - bar_h//2, bar_w, bar_h)
+                pygame.draw.rect(WIN, BLACK, left_bar)
+                pygame.draw.rect(WIN, BLACK, right_bar)
+            else:
+                # Sideways play triangle
+                tri_w = rect.width // 3
+                tri_h = rect.height - 10
+                points = [
+                    (cx - tri_w//3, cy - tri_h//2),  # top-left
+                    (cx + tri_w*2//3, cy),            # middle-right
+                    (cx - tri_w//3, cy + tri_h//2),  # bottom-left
+                ]
+                pygame.draw.polygon(WIN, BLACK, points)
         else:
             display = label
-        
-        # Render and center text (skip for Pause button)
-        text_surf = font.render(display, True, BLACK)
-        WIN.blit(text_surf, text_surf.get_rect(center=rect.center))
+            text_surf = font.render(display, True, BLACK)
+            WIN.blit(text_surf, text_surf.get_rect(center=rect.center))
 
 
 def draw_shop():
@@ -415,7 +531,7 @@ def draw_shop():
             }[name]
             WIN.blit(text, text.get_rect(center=btn.center))
         
-        # FIXED SEED BUTTONS: 4px borders + perfect spacing + Watermelon fix
+        # Seed buttons: clearer layout for name, price, and count
         seeds = [
             ("corn", 5), ("watermelon", 7), ("pumpkin", 8), 
             ("tomato", 10), ("grape", 12), ("super", 20)
@@ -427,20 +543,21 @@ def draw_shop():
             pygame.draw.rect(WIN, color, btn)
             pygame.draw.rect(WIN, BROWN, btn, 4)  # THICK 4px BORDER
             
-            # WATERMELON FIX + perfect text spacing
+            # Use slightly smaller font so text isn't squeezed
             if seed_type == "watermelon":
-                name_text = pygame.font.SysFont('arial', 12).render("Waterm.", True, BLACK)
+                name_label = "Watermelon"
             else:
-                name_text = font.render(seed_type.capitalize(), True, BLACK)
-            
-            price_text = font.render(f"${cost}", True, (0, 150, 0))
+                name_label = seed_type.capitalize()
+
+            name_text = small_font.render(name_label, True, BLACK)
+            price_text = small_font.render(f"${cost}", True, (0, 150, 0))
             count = globals()[f"{seed_type}_seeds"]
-            count_text = font.render(str(count), True, RED)
+            count_text = small_font.render(f"x{count}", True, RED)
             
-            # Perfect vertical spacing for 50px buttons
-            name_y = btn.y + 6      # Top: 6px padding
-            price_y = btn.centery - price_text.get_height()//2  # Center
-            count_y = btn.bottom - 16  # Bottom: 16px padding
+            # Comfortable vertical spacing inside each 50px-tall button
+            name_y = btn.y + 4  # Top label
+            price_y = btn.centery - price_text.get_height()//2  # Middle price
+            count_y = btn.bottom - count_text.get_height() - 4  # Bottom count
             
             WIN.blit(name_text, (btn.centerx - name_text.get_width()//2, name_y))
             WIN.blit(price_text, (btn.centerx - price_text.get_width()//2, price_y))
@@ -449,6 +566,7 @@ def draw_shop():
 
 
 def draw_end_screen():
+    global scoreboard, player_rank, score_saved
     if not show_game_over:
         return
     
@@ -474,6 +592,19 @@ def draw_end_screen():
         WIN.blit(font.render(f"Needed: {req} coins", True, WHITE), (panel.x + 30, panel.y + 120))
         WIN.blit(font.render(f"Have: {coins} coins", True, WHITE), (panel.x + 30, panel.y + 150))  
 
+    # Show rank if saved
+    if score_saved and player_rank is not None:
+        rank_text = font.render(f"Your rank: #{player_rank}", True, WHITE)
+        WIN.blit(rank_text, (panel.x + 30, panel.y + 180))
+
+    # High score table (top 5)
+    if scoreboard:
+        hs_title = font.render("High Scores:", True, WHITE)
+        WIN.blit(hs_title, (panel.x + 260, panel.y + 80))
+        for i, (name, sc) in enumerate(scoreboard[:5]):
+            entry = font.render(f"{i+1}. {name} - {sc}", True, WHITE)
+            WIN.blit(entry, (panel.x + 260, panel.y + 110 + i * 20))
+
     
     replay_rect = pygame.Rect(panel.x + 50, panel.y + 220, 190, 60)
     pygame.draw.rect(WIN, (50, 200, 50), replay_rect)
@@ -484,6 +615,61 @@ def draw_end_screen():
     pygame.draw.rect(WIN, RED, quit_rect)
     pygame.draw.rect(WIN, BLACK, quit_rect, 3)
     WIN.blit(QUIT_TEXT, (quit_rect.centerx - QUIT_TEXT.get_width()//2, quit_rect.centery - 10))
+
+
+def draw_name_input():
+    if not entering_name or score_saved:
+        return
+    box = pygame.Rect(200, 220, 400, 160)
+    pygame.draw.rect(WIN, WHITE, box)
+    pygame.draw.rect(WIN, BLACK, box, 3)
+    title = big_font.render("Enter your name:", True, BLACK)
+    WIN.blit(title, (box.centerx - title.get_width()//2, box.y + 20))
+    display_name = player_name if player_name else "_"
+    name_surf = big_font.render(display_name, True, BLACK)
+    WIN.blit(name_surf, (box.centerx - name_surf.get_width()//2, box.y + 70))
+    hint = font.render("Press Enter to save score", True, BLACK)
+    WIN.blit(hint, (box.centerx - hint.get_width()//2, box.y + 120))
+
+
+def draw_scoreboard_popup():
+    if not show_scoreboard:
+        return
+    # Semi-transparent overlay
+    overlay = pygame.Surface((WIDTH, HEIGHT))
+    overlay.set_alpha(160)
+    overlay.fill(INSTRUCTIONS_BG)
+    WIN.blit(overlay, (0, 0))
+
+    panel = pygame.Rect(140, 120, 520, 440)
+    pygame.draw.rect(WIN, WHITE, panel)
+    pygame.draw.rect(WIN, BROWN, panel, 4)
+
+    title = big_font.render("Ranking Board", True, BLACK)
+    WIN.blit(title, (panel.centerx - title.get_width()//2, panel.y + 20))
+
+    # Load latest scores if empty
+    global scoreboard
+    if not scoreboard:
+        scoreboard = load_scores()
+
+    # Show top 5
+    header = font.render("Top 5 Players (by coins):", True, BLACK)
+    WIN.blit(header, (panel.x + 20, panel.y + 70))
+
+    if not scoreboard:
+        empty = font.render("No scores yet.", True, BLACK)
+        WIN.blit(empty, (panel.x + 20, panel.y + 100))
+    else:
+        for i, (name, sc) in enumerate(scoreboard[:5]):
+            entry = font.render(f"{i+1}. {name} - {sc}", True, BLACK)
+            WIN.blit(entry, (panel.x + 40, panel.y + 100 + i * 24))
+
+    # Close button
+    close_rect = pygame.Rect(panel.right - 35, panel.y + 15, 20, 20)
+    pygame.draw.rect(WIN, RED, close_rect)
+    pygame.draw.rect(WIN, BLACK, close_rect, 2)
+    WIN.blit(CLOSE_TEXT, CLOSE_TEXT.get_rect(center=close_rect.center))
 
 def get_farm_position():
     return (
@@ -555,6 +741,19 @@ while run:
         if event.type == pygame.QUIT:
             run = False
         elif event.type == pygame.KEYDOWN:
+            # Handle name entry first when game is over
+            if entering_name and show_game_over:
+                if event.key == pygame.K_RETURN:
+                    if player_name.strip():
+                        scoreboard, player_rank = save_score_and_rank(player_name.strip(), coins)
+                        score_saved = True
+                        entering_name = False
+                elif event.key == pygame.K_BACKSPACE:
+                    player_name = player_name[:-1]
+                else:
+                    if len(player_name) < 12 and event.unicode.isprintable():
+                        player_name += event.unicode
+                continue
             if event.key == pygame.K_ESCAPE:
                 run = False
             elif event.key == pygame.K_s and not (show_game_over or show_instructions):
@@ -572,6 +771,10 @@ while run:
                     current_day = 0
                     day_start_time = time.time()
                     game_over = game_won = show_game_over = False
+                    entering_name = False
+                    score_saved = False
+                    player_name = ""
+                    player_rank = None
                 elif event.key == pygame.K_q:
                     run = False
         elif event.type == pygame.MOUSEBUTTONDOWN:
@@ -589,6 +792,10 @@ while run:
                     current_day = 0
                     day_start_time = time.time()
                     game_over = game_won = show_game_over = False
+                    entering_name = False
+                    score_saved = False
+                    player_name = ""
+                    player_rank = None
                 elif pygame.Rect(panel.x + 260, panel.y + 220, 190, 60).collidepoint(mx, my):
                     run = False
                 continue
@@ -598,13 +805,23 @@ while run:
                 if close_rect.collidepoint(mx, my):
                     show_instructions = False
                     continue
+
+            # SCOREBOARD POPUP HANDLING
+            if show_scoreboard:
+                panel = pygame.Rect(140, 120, 520, 440)
+                close_rect = pygame.Rect(panel.right - 35, panel.y + 15, 20, 20)
+                if close_rect.collidepoint(mx, my):
+                    show_scoreboard = False
+                # Ignore other clicks when scoreboard is open
+                continue
             
-            # TOP MENU BAR HANDLING (Pause, Help, Quit, Music, Vol)
+            # TOP MENU BAR HANDLING (Pause, Help, Quit, Music, Vol, Rank)
             if my < MENU_HEIGHT and not show_game_over and not show_instructions:
                 if MENU_BUTTONS["Pause"].collidepoint(mx, my):
                     is_paused = not is_paused
                 elif MENU_BUTTONS["Help"].collidepoint(mx, my):
                     show_instructions = True
+                    show_scoreboard = False
                 elif MENU_BUTTONS["Music"].collidepoint(mx, my):
                     if is_music_on:
                         pygame.mixer.music.pause()
@@ -616,6 +833,12 @@ while run:
                     # FIXED: 25%→50%→75%→100%
                     music_volume_index = (music_volume_index + 1) % 4
                     pygame.mixer.music.set_volume(MUSIC_VOLUMES[music_volume_index])
+                elif MENU_BUTTONS["Rank"].collidepoint(mx, my):
+                    # Toggle ranking popup; hide instructions when showing it
+                    show_scoreboard = not show_scoreboard
+                    if show_scoreboard:
+                        show_instructions = False
+                        scoreboard = load_scores()
                 elif MENU_BUTTONS["Quit"].collidepoint(mx, my):
                     run = False
                 continue
@@ -694,6 +917,8 @@ while run:
         draw_shop()
     draw_farm()
     draw_end_screen()
+    draw_name_input()
+    draw_scoreboard_popup()
     
     # Instructions overlay
     if show_instructions:
