@@ -12,7 +12,8 @@ FARM_Y_OFFSET = 120
 SHOP_HEIGHT = 80
 COLLAPSED_HEIGHT = 30
 MENU_HEIGHT = 40
-MUSIC_VOLUMES = [0.0, 0.25, 0.5, 0.75, 1.0]
+MUSIC_VOLUMES = [0.0, 0.25, 0.5, 0.75, 1.0]  # Keep 0.0 but skip it
+music_volume_index = 1
 
 # Colors / palette
 SKY_COLOR = (130, 195, 255)
@@ -36,7 +37,7 @@ big_font = pygame.font.SysFont('arial', 19)
 
 #menu
 MENU_BUTTONS = {
-    "New": pygame.Rect(10, 5, 70, 30),
+    "Pause": pygame.Rect(10, 5, 70, 30),  
     "Help": pygame.Rect(90, 5, 70, 30),
     "Quit": pygame.Rect(170, 5, 70, 30),
     "Music": pygame.Rect(250, 5, 80, 30),
@@ -130,10 +131,9 @@ def get_shop_buttons():
             'day': pygame.Rect(90, 2 + MENU_HEIGHT, 45, 26),
             'quota': pygame.Rect(140, 2 + MENU_HEIGHT, 45, 26),
             'timer': pygame.Rect(195, 2 + MENU_HEIGHT, 55, 26),
-            'seeds': pygame.Rect(255, 2 + MENU_HEIGHT, 45, 26),
-            'pause': pygame.Rect(305, 2 + MENU_HEIGHT, 30, 26),
-            'help': pygame.Rect(WIDTH-35, 5 + MENU_HEIGHT, 20, 20)
+            'seeds': pygame.Rect(255, 2 + MENU_HEIGHT, 45, 26)
         }
+
     return {
         'corn 5$': pygame.Rect(10, 15 + MENU_HEIGHT, 70, 50),
         'watermelon 7$': pygame.Rect(85, 15 + MENU_HEIGHT, 70, 50),
@@ -145,9 +145,7 @@ def get_shop_buttons():
         'day': pygame.Rect(535, 15 + MENU_HEIGHT, 45, 25),
         'quota': pygame.Rect(585, 15 + MENU_HEIGHT, 45, 25),
         'timer': pygame.Rect(635, 15 + MENU_HEIGHT, 70, 25),
-        'seeds': pygame.Rect(710, 15 + MENU_HEIGHT, 55, 25),
-        'pause': pygame.Rect(600, 45 + MENU_HEIGHT, 40, 25),
-        'help': pygame.Rect(WIDTH-35, 15 + MENU_HEIGHT, 25, 45)
+        'seeds': pygame.Rect(710, 15 + MENU_HEIGHT, 55, 25)
     }
 
 
@@ -325,7 +323,7 @@ def draw_background():
     pygame.draw.rect(WIN, GROUND_COLOR, (0, HEIGHT // 2 + 40, WIDTH, HEIGHT // 2 - 40))
     # Sun in top-right
     pygame.draw.circle(WIN, SUN_COLOR, (WIDTH - 80, 80), 40)
-
+    
 def draw_menu_bar():
     # background bar
     pygame.draw.rect(WIN, (180, 180, 180), (0, 0, WIDTH, MENU_HEIGHT))
@@ -333,18 +331,37 @@ def draw_menu_bar():
 
     mouse_pos = pygame.mouse.get_pos()
     for label, rect in MENU_BUTTONS.items():
-        color = SHOP_HOVER if rect.collidepoint(mouse_pos) else SHOP_BG
-        # Dim the Music button when music is off
+        # PAUSE BUTTON: Grey when paused (highest priority)
+        if label == "Pause" and is_paused:
+            color = (170, 170, 170)  # GREY when PAUSED
+        elif rect.collidepoint(mouse_pos):
+            color = SHOP_HOVER
+        else:
+            color = SHOP_BG
+        
+        # MUSIC BUTTON: Dim when music off
         if label == "Music" and not is_music_on:
             color = (170, 170, 170)
+        
         pygame.draw.rect(WIN, color, rect)
         pygame.draw.rect(WIN, BLACK, rect, 2)
+        
         if label == "Vol":
-            display = f"Vol {int(MUSIC_VOLUMES[music_volume_index]*100)}%"
+            # FIXED: Shows ONLY 25%, 50%, 75%, 100% (no 0%)
+            volume_percent = int(MUSIC_VOLUMES[music_volume_index] * 100)
+            display = f"Vol {volume_percent}%"
+        elif label == "Pause":
+            # Visual feedback: || (paused) or ▶ (running)
+            pause_surf = PAUSE_ON_TEXT if is_paused else PAUSE_TEXT
+            WIN.blit(pause_surf, pause_surf.get_rect(center=rect.center))
+            continue  # Skip normal text rendering
         else:
             display = label
+        
+        # Render and center text (skip for Pause button)
         text_surf = font.render(display, True, BLACK)
         WIN.blit(text_surf, text_surf.get_rect(center=rect.center))
+
 
 def draw_shop():
     buttons = get_shop_buttons()
@@ -375,29 +392,15 @@ def draw_shop():
             }[name]
             WIN.blit(text, text.get_rect(center=btn.center))
         
-        # FIXED: Seed letters with counts
+        # Seed letters with counts
         for i, letter in enumerate(SEED_LETTERS):
             x = 355 + i * 22
             WIN.blit(font.render(letter, True, BLACK), (x + 2, 3 + MENU_HEIGHT))
             if seed_count_surfaces[i]:
                 WIN.blit(seed_count_surfaces[i], (x + 2, 18 + MENU_HEIGHT))
-        
-        # FIXED: Pause button with visual feedback
-        btn = buttons['pause']
-        color = SHOP_HOVER if btn.collidepoint(mouse_pos) else SHOP_BG
-        pygame.draw.rect(WIN, color, btn)
-        pygame.draw.rect(WIN, BROWN, btn, 2)
-        pause_surf = PAUSE_ON_TEXT if is_paused else PAUSE_TEXT
-        WIN.blit(pause_surf, pause_surf.get_rect(center=btn.center))
-        
-        btn = buttons['help']
-        pygame.draw.rect(WIN, SHOP_HOVER if btn.collidepoint(mouse_pos) else SHOP_BG, btn)
-        pygame.draw.rect(WIN, BROWN, btn, 2)
-        WIN.blit(HELP_TEXT, HELP_TEXT.get_rect(center=btn.center))
     
     else:
-        WIN.blit(SHOP_TITLE, (10, 22))
-        
+        # Stats buttons (coins, day, quota, timer, seeds)
         for name in ['coins', 'day', 'quota', 'timer', 'seeds']:
             btn = buttons[name]
             color = SHOP_HOVER if btn.collidepoint(mouse_pos) else SHOP_BG
@@ -412,48 +415,38 @@ def draw_shop():
             }[name]
             WIN.blit(text, text.get_rect(center=btn.center))
         
-            seeds = [
+        # FIXED SEED BUTTONS: 4px borders + perfect spacing + Watermelon fix
+        seeds = [
             ("corn", 5), ("watermelon", 7), ("pumpkin", 8), 
-            ("tomato", 10), ("grape", 12), ("super", 20)]
-
+            ("tomato", 10), ("grape", 12), ("super", 20)
+        ]
+        
         for i, (seed_type, cost) in enumerate(seeds):
             btn = buttons[f"{seed_type} {cost}$"]
             color = SHOP_HOVER if btn.collidepoint(mouse_pos) else SHOP_BG
             pygame.draw.rect(WIN, color, btn)
-            pygame.draw.rect(WIN, BROWN, btn, 2)
+            pygame.draw.rect(WIN, BROWN, btn, 4)  # THICK 4px BORDER
             
-            # Name text
-            name_text = font.render(seed_type.capitalize(), True, BLACK)
+            # WATERMELON FIX + perfect text spacing
+            if seed_type == "watermelon":
+                name_text = pygame.font.SysFont('arial', 12).render("Waterm.", True, BLACK)
+            else:
+                name_text = font.render(seed_type.capitalize(), True, BLACK)
             
-            # Price text
             price_text = font.render(f"${cost}", True, (0, 150, 0))
-            
-            # Count text
             count = globals()[f"{seed_type}_seeds"]
             count_text = font.render(str(count), True, RED)
             
-            # Position texts (name top, price middle, count bottom)
-            name_y = btn.y + 8
-            price_y = btn.centery - price_text.get_height()//2
-            count_y = btn.bottom - 18
+            # Perfect vertical spacing for 50px buttons
+            name_y = btn.y + 6      # Top: 6px padding
+            price_y = btn.centery - price_text.get_height()//2  # Center
+            count_y = btn.bottom - 16  # Bottom: 16px padding
             
             WIN.blit(name_text, (btn.centerx - name_text.get_width()//2, name_y))
             WIN.blit(price_text, (btn.centerx - price_text.get_width()//2, price_y))
             WIN.blit(count_text, (btn.centerx - count_text.get_width()//2, count_y))
 
-        
-        #Expanded pause button
-        btn = buttons['pause']
-        color = SHOP_HOVER if btn.collidepoint(mouse_pos) else SHOP_BG
-        pygame.draw.rect(WIN, color, btn)
-        pygame.draw.rect(WIN, BROWN, btn, 2)
-        pause_surf = PAUSE_ON_TEXT if is_paused else PAUSE_TEXT
-        WIN.blit(pause_surf, pause_surf.get_rect(center=btn.center))
-        
-        btn = buttons['help']
-        pygame.draw.rect(WIN, SHOP_HOVER if btn.collidepoint(mouse_pos) else SHOP_BG, btn)
-        pygame.draw.rect(WIN, BROWN, btn, 2)
-        WIN.blit(HELP_BIG_TEXT, HELP_BIG_TEXT.get_rect(center=btn.center))
+
 
 def draw_end_screen():
     if not show_game_over:
@@ -554,7 +547,7 @@ def update_paused_text():
         minutes, seconds = divmod(int(time_left), 60)
         day_timer_surface = timer_font_day.render(f"{minutes:02d}:{seconds:02d}", True, WHITE)
 
-# MAIN LOOP
+# MAIN LOOP 
 run = True
 while run:
     # Handle events FIRST
@@ -570,7 +563,7 @@ while run:
                 show_instructions = not show_instructions
             elif show_game_over:
                 if event.key == pygame.K_r:
-                    # Reset game (same as before)
+                    # Reset game
                     coins = 15
                     daily_start_coins = 15
                     corn_seeds = watermelon_seeds = pumpkin_seeds = tomato_seeds = grape_seeds = super_seeds = 0
@@ -587,6 +580,7 @@ while run:
             if show_game_over:
                 panel = pygame.Rect(150, 200, 500, 350)
                 if pygame.Rect(panel.x + 50, panel.y + 220, 190, 60).collidepoint(mx, my):
+                    # Replay
                     coins = 15
                     daily_start_coins = 15
                     corn_seeds = watermelon_seeds = pumpkin_seeds = tomato_seeds = grape_seeds = super_seeds = 0
@@ -605,10 +599,9 @@ while run:
                     show_instructions = False
                     continue
             
-            # Top menu bar handling
+            # TOP MENU BAR HANDLING (Pause, Help, Quit, Music, Vol)
             if my < MENU_HEIGHT and not show_game_over and not show_instructions:
-                if MENU_BUTTONS["New"].collidepoint(mx, my):
-                    # Same behavior as pause button: toggle pause state
+                if MENU_BUTTONS["Pause"].collidepoint(mx, my):
                     is_paused = not is_paused
                 elif MENU_BUTTONS["Help"].collidepoint(mx, my):
                     show_instructions = True
@@ -620,13 +613,14 @@ while run:
                         pygame.mixer.music.unpause()
                         is_music_on = True
                 elif MENU_BUTTONS["Vol"].collidepoint(mx, my):
-                    # Cycle through predefined volume levels
-                    music_volume_index = (music_volume_index + 1) % len(MUSIC_VOLUMES)
+                    # FIXED: 25%→50%→75%→100%
+                    music_volume_index = (music_volume_index + 1) % 4
                     pygame.mixer.music.set_volume(MUSIC_VOLUMES[music_volume_index])
                 elif MENU_BUTTONS["Quit"].collidepoint(mx, my):
                     run = False
                 continue
             
+            # SHOP BUTTONS (NO pause/help - moved to menu bar)
             if not show_instructions:
                 shop_height = MENU_HEIGHT + (COLLAPSED_HEIGHT if shop_collapsed else SHOP_HEIGHT)
                 if my < shop_height:
@@ -634,11 +628,11 @@ while run:
                     if shop_collapsed:
                         if buttons['toggle'].collidepoint(mx, my):
                             shop_collapsed = not shop_collapsed
-                        elif buttons['pause'].collidepoint(mx, my):  # FIXED: Pause toggle
-                            is_paused = not is_paused
-                        elif buttons['help'].collidepoint(mx, my):
-                            show_instructions = True
+                        # NO pause/help buttons here anymore
                     else:
+                        # Seed buying (BLOCKED when paused)
+                        if is_paused:
+                            continue
                         seed_buttons = {
                             'corn': (buttons['corn 5$'], SHOP_COSTS["corn"]),
                             'watermelon': (buttons['watermelon 7$'], SHOP_COSTS["watermelon"]),
@@ -647,21 +641,15 @@ while run:
                             'grape': (buttons['grape 12$'], SHOP_COSTS["grape"]),
                             'super': (buttons['super 20$'], SHOP_COSTS["super"]),
                         }
-
                         for seed_name, (btn, cost) in seed_buttons.items():
                             if btn.collidepoint(mx, my) and coins >= cost:
-                                if is_paused:
-                                    continue
                                 globals()[f"{seed_name}_seeds"] += 1
                                 coins -= cost
                                 update_cached_text()
                                 break
-
-                        if buttons['pause'].collidepoint(mx, my):  #Pause toggle
-                            is_paused = not is_paused
-                        elif buttons['help'].collidepoint(mx, my):
-                            show_instructions = True
+                        # NO pause/help buttons here anymore
                 else:
+                    # FARM PLANTING/HARVESTING
                     farm_x, farm_y = get_farm_position()
                     if (farm_x <= mx < farm_x + GRID_SIZE * TILE_SIZE and 
                         farm_y <= my < farm_y + GRID_SIZE * TILE_SIZE):
@@ -674,8 +662,8 @@ while run:
                                 coins += GROWTH_TIMES[seed_type]["harvest"]
                                 crops[row][col] = None
                                 update_cached_text()
-                            elif crops[row][col] is None:
-                                # FIXED: Cheap seeds first (corn → super)
+                            elif crops[row][col] is None and not is_paused:
+                                # Auto-plant cheapest seeds first
                                 for seed_type, var_name in [
                                     ("corn", "corn_seeds"),
                                     ("watermelon", "watermelon_seeds"),
@@ -691,12 +679,15 @@ while run:
                                         update_cached_text()
                                         break
     
+    # GAME LOGIC (PAUSED = STOPPED)
     if not is_paused and not show_game_over and not show_instructions:
         check_daily_quota()
         update_crops()
+        update_cached_text()
+    else:
+        update_paused_text()
     
-    update_cached_text()
-    # Draw everything
+    # DRAW EVERYTHING
     draw_background()
     draw_menu_bar()
     if not show_game_over:
@@ -716,17 +707,17 @@ while run:
         WIN.blit(INSTRUCTIONS_TITLE, (panel.x + 20, panel.y + 20))
         instructions = [
             "1. Buy seeds from SHOP buttons",
-            "2. Click empty farm tiles to plant",
+            "2. Click empty farm tiles to plant", 
             "3. Watch plants grow!",
             "4. Click READY crops ($ shown) to harvest",
             "5. MEET DAILY QUOTA or GAME OVER!",
             "6. S = toggle shop, H = help, ESC = quit",
-            "7. ||/▶ = PAUSE (click button too!)",
+            "7. ||/▶ = PAUSE (top menu!)",
             "",
             "Corn:8s=$6 | Watermelon:11s=$12 | Pumpkin:14s=$15",
             "Tomato:12s=$18 | Grape:17s=$20 | Super:20s=$50 ($20)",
             "",
-            f"Day {current_day+1} quota: {daily_quotas[current_day]} earned today"
+            f"Day {current_day+1} quota: {daily_quotas[current_day]}"
         ]
         for i, text in enumerate(instructions):
             WIN.blit(font.render(text, True, BLACK), (panel.x + 20, panel.y + 70 + i * 18))
@@ -735,9 +726,6 @@ while run:
         pygame.draw.rect(WIN, RED, close_rect)
         pygame.draw.rect(WIN, BLACK, close_rect, 2)
         WIN.blit(CLOSE_TEXT, CLOSE_TEXT.get_rect(center=close_rect.center))
-        mouse_pos = pygame.mouse.get_pos()
-        if close_rect.collidepoint(mouse_pos):
-            pygame.mouse.set_cursor(pygame.SYSTEM_CURSOR_HAND)
     
     pygame.display.flip()
     clock.tick(60)
